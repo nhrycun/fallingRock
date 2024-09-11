@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js + Cannon.js Physics</title>
+  <style> body { margin: 0; } canvas { display: block; } </style>
+</head>
+<body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+
+  <!-- Load the sound file -->
+  <audio id="hitSound" src="rockSound.mp3"></audio> <!-- Replace with actual sound URL -->
+
+  <script>
+    // Three.js setup
+    let scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xdddddd); // Light gray background
+
+    // Camera setup for slightly angled side view and farther away
+    let camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 50000);
+    camera.position.set(20, 50, 200);  // Set camera slightly above and farther back along the Z-axis
+    camera.lookAt(0, 0, 0);           // Camera points to the center of the scene
+
+    let renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Add a directional light
+    let light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(0, 10, 10).normalize();
+    scene.add(light);
+
+    // Add a helper grid to visualize the ground and orientation
+    let gridHelper = new THREE.GridHelper(100, 100);
+    scene.add(gridHelper);
+
+    // Cannon.js physics world
+    let world = new CANNON.World();
+    world.gravity.set(0, -9.82, 0); // Gravity pointing downward
+
+    // Create a cube in Three.js
+    let cubeGeometry = new THREE.BoxGeometry(2, 2, 2);
+    let cubeMaterial = new THREE.MeshLambertMaterial({ color: 0x808080 });
+    let cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+    scene.add(cube);
+
+    // Create a physics body for the cube in Cannon.js
+    let cubeShape = new CANNON.Box(new CANNON.Vec3(1, 1, 1)); // Box with half-extents
+    let cubeBody = new CANNON.Body({ mass: 1 }); // Mass is 1 so the cube will fall
+    cubeBody.addShape(cubeShape);
+    cubeBody.position.set(0, 50, 0); // Start the cube at height 50
+    world.addBody(cubeBody);
+
+    // Create a deep cylinder (hole) in Three.js
+    let holeDepth = 10000;
+    let holeRadius = 5; // Adjust the radius as needed
+    let holeGeometry = new THREE.CylinderGeometry(holeRadius, holeRadius, holeDepth, 32);
+    let holeMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
+    let hole = new THREE.Mesh(holeGeometry, holeMaterial);
+    hole.position.set(0, -holeDepth / 2, 0);
+    scene.add(hole);
+
+    // Add physics walls for the hole in Cannon.js
+    let wallShape = new CANNON.Cylinder(holeRadius, holeRadius, holeDepth, 32);
+    let wallBody = new CANNON.Body({ mass: 0 }); // Static walls with no mass
+    wallBody.addShape(wallShape);
+    wallBody.position.set(0, -holeDepth / 2, 0); // Same position as the Three.js cylinder
+    world.addBody(wallBody);
+
+    // Variable to track if cube hits the walls
+    let hitWall = false;
+
+    // Function to play the hit sound
+    const playHitSound = () => {
+      const hitSound = document.getElementById('hitSound');
+      hitSound.currentTime = 0; // Reset sound to the start
+      hitSound.play();
+    };
+
+    // Physics update function
+    function updatePhysics() {
+      world.step(1 / 60); // Step the physics simulation forward by 1/60th of a second
+
+      // Copy position and rotation from Cannon.js to Three.js
+      cube.position.copy(cubeBody.position);
+      cube.quaternion.copy(cubeBody.quaternion);
+
+      // Detect if the cube hits the wall
+      let distanceFromCenter = Math.sqrt(cubeBody.position.x ** 2 + cubeBody.position.z ** 2);
+      if (distanceFromCenter + 1 >= holeRadius) { // 1 is the cube's half-size
+        hitWall = true;
+        cubeMaterial.color.set(0xff0000); // Change cube color to red if it hits the wall
+        console.log("Cube hit the wall!");
+        
+        // Play the sound when hitting the wall
+        playHitSound();
+
+        // Apply a small bounce force in the opposite direction of the wall
+        let directionFromCenter = new CANNON.Vec3(cubeBody.position.x, 0, cubeBody.position.z).unit();
+        let bounceForce = directionFromCenter.scale(-50); // Adjust the force scale as needed
+        cubeBody.applyImpulse(bounceForce, cubeBody.position);
+      } else {
+        hitWall = false;
+        cubeMaterial.color.set(0x808080); // Reset color if not hitting
+      }
+
+      // Log the cube position for debugging
+      console.log(`Cube Y Position: ${cubeBody.position.y}, Distance from center: ${distanceFromCenter}`);
+    }
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      updatePhysics(); // Update physics before rendering
+      renderer.render(scene, camera);
+    }
+
+    animate(); // Start the animation loop
+  </script>
+  
+</body>
+</html>
